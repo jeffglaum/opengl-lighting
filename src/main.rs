@@ -165,6 +165,58 @@ fn main() {
         rng.gen_range(-1.0..1.0),
     ).normalize();
 
+    let normal_scale = 0.2; // length of arrows
+
+    let normal_lines: [f32; 18] = [
+        // start point          // end point
+        -0.5, -0.5, 0.0,        -0.5, -0.5, normal_scale,
+         0.5, -0.5, 0.0,         0.5, -0.5, normal_scale,
+         0.0,  0.5, 0.0,         0.0,  0.5, normal_scale,
+    ];
+
+    let (mut arrow_vao, mut arrow_vbo) = (0, 0);
+    unsafe {
+        gl::GenVertexArrays(1, &mut arrow_vao);
+        gl::GenBuffers(1, &mut arrow_vbo);
+    
+        gl::BindVertexArray(arrow_vao);
+        gl::BindBuffer(gl::ARRAY_BUFFER, arrow_vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (normal_lines.len() * mem::size_of::<f32>()) as isize,
+            normal_lines.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+    
+        gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<f32>() as i32, ptr::null());
+        gl::EnableVertexAttribArray(0);
+    }
+
+    let arrow_vs = r#"
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        vec3 FragPos;
+        uniform mat4 model;
+        uniform mat4 view;
+        uniform mat4 projection;
+        void main() {
+            FragPos = vec3(model * vec4(aPos, 1.0));
+            gl_Position = projection * view * vec4(FragPos, 1.0);
+        }
+    "#;
+    
+    let arrow_fs = r#"
+        #version 330 core
+        out vec4 FragColor;
+        void main() {
+            FragColor = vec4(1.0, 1.0, 0.0, 1.0); // yellow
+        }
+    "#;
+
+    let arrow_vs_id = compile_shader(arrow_vs, gl::VERTEX_SHADER).unwrap();
+    let arrow_fs_id = compile_shader(arrow_fs, gl::FRAGMENT_SHADER).unwrap();
+    let arrow_program = link_program(arrow_vs_id, arrow_fs_id).unwrap();
+
     while !window.should_close() {
         glfw.poll_events();
         for (_, event) in glfw::flush_messages(&events) {
@@ -196,10 +248,22 @@ fn main() {
             gl::Uniform3f(light_pos_loc, 1.2, 1.0, 2.0);
             gl::Uniform3f(view_pos_loc, 0.0, 0.0, 2.0);
             gl::Uniform3f(light_color_loc, 1.0, 1.0, 1.0);
-            gl::Uniform3f(object_color_loc, 1.0, 0.5, 0.3);
+            gl::Uniform3f(object_color_loc, 0.3, 0.5, 1.0);
 
             gl::BindVertexArray(vao);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
+
+            gl::UseProgram(arrow_program);
+
+            let model_loc = gl::GetUniformLocation(arrow_program, CString::new("model").unwrap().as_ptr());
+            let view_loc = gl::GetUniformLocation(arrow_program, CString::new("view").unwrap().as_ptr());
+            let proj_loc = gl::GetUniformLocation(arrow_program, CString::new("projection").unwrap().as_ptr());
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+            gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
+            gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
+
+            gl::BindVertexArray(arrow_vao);
+            gl::DrawArrays(gl::LINES, 0, 6); // 3 lines → 6 vertices
         }
 
         window.swap_buffers();

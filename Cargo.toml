@@ -1,0 +1,10 @@
+[package]
+name = "opengl-lighting"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gl = "0.14"
+glfw = "0.55"
+cgmath = "0.18"
+rand = "0.8"

@@ -1,10 +1,11 @@
 [package]
-name = "opengl-lighting"
+name = "red_screen"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+glutin = "0.29"
 gl = "0.14"
-glfw = "0.55"
+winit = "0.27"
 cgmath = "0.18"
 rand = "0.8"

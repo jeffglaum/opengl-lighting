@@ -1,12 +1,15 @@
-extern crate glfw;
-extern crate gl;
-extern crate cgmath;
-
-use glfw::{Action, Context, Key};
-use cgmath::{perspective, Deg, InnerSpace, Matrix, Matrix4, Point3, Vector3};
+use glutin::ContextBuilder;
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::ControlFlow,
+    event_loop::EventLoop,
+    window::WindowBuilder,
+};
 use std::{ffi::CString, mem, ptr, str};
+use cgmath::{perspective, Deg, InnerSpace, Matrix, Matrix4, Point3, Vector3};
 use rand::Rng;
 use std::time::Instant;
+
 
 fn compile_shader(src: &str, ty: gl::types::GLenum) -> Result<u32, String> {
     let shader;
@@ -51,20 +54,25 @@ fn link_program(vs: u32, fs: u32) -> Result<u32, String> {
 }
 
 fn main() {
-    let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
-    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
-    glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
+    // Create event loop and window
+    let event_loop = EventLoop::new();
+    let window_builder = WindowBuilder::new()
+        .with_title("OpenGL Lighting")
+        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0));
 
-    let (mut window, events) = glfw
-        .create_window(800, 600, "OpenGL Lighting", glfw::WindowMode::Windowed)
-        .expect("Failed to create GLFW window.");
+    let windowed_context = ContextBuilder::new()
+        .with_vsync(true)
+        .build_windowed(window_builder, &event_loop)
+        .unwrap();
 
-    window.make_current();
-    gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
 
+    // Load OpenGL functions
+    gl::load_with(|symbol| windowed_context.get_proc_address(symbol) as *const _);
+
+    // Set clear color
     unsafe {
-        gl::Enable(gl::DEPTH_TEST);
-        gl::ClearColor(0.1, 0.1, 0.2, 1.0);
+        gl::ClearColor(0.0, 0.0, 0.0, 1.0);
     }
 
     // Triangle vertex data
@@ -217,55 +225,61 @@ fn main() {
     let arrow_fs_id = compile_shader(arrow_fs, gl::FRAGMENT_SHADER).unwrap();
     let arrow_program = link_program(arrow_vs_id, arrow_fs_id).unwrap();
 
-    while !window.should_close() {
-        glfw.poll_events();
-        for (_, event) in glfw::flush_messages(&events) {
-            match event {
-                glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => window.set_should_close(true),
-                _ => {}
+    // Run event loop
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::RedrawRequested(_) => {
+                unsafe {
+                    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+                    gl::UseProgram(program);
+        
+                    let elapsed = start_time.elapsed().as_secs_f32();
+                    let angle = Deg(elapsed * 45.0); // 45 degrees per second
+                    let model = Matrix4::from_axis_angle(rotation_axis, angle);
+        
+                    let model_loc = gl::GetUniformLocation(program, CString::new("model").unwrap().as_ptr());
+                    let view_loc = gl::GetUniformLocation(program, CString::new("view").unwrap().as_ptr());
+                    let proj_loc = gl::GetUniformLocation(program, CString::new("projection").unwrap().as_ptr());
+                    let light_pos_loc = gl::GetUniformLocation(program, CString::new("lightPos").unwrap().as_ptr());
+                    let view_pos_loc = gl::GetUniformLocation(program, CString::new("viewPos").unwrap().as_ptr());
+                    let light_color_loc = gl::GetUniformLocation(program, CString::new("lightColor").unwrap().as_ptr());
+                    let object_color_loc = gl::GetUniformLocation(program, CString::new("objectColor").unwrap().as_ptr());
+        
+                    gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+                    gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
+                    gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
+                    gl::Uniform3f(light_pos_loc, 1.2, 1.0, 2.0);
+                    gl::Uniform3f(view_pos_loc, 0.0, 0.0, 2.0);
+                    gl::Uniform3f(light_color_loc, 1.0, 1.0, 1.0);
+                    gl::Uniform3f(object_color_loc, 0.3, 0.5, 1.0);
+        
+                    gl::BindVertexArray(vao);
+                    gl::DrawArrays(gl::TRIANGLES, 0, 3);
+        
+                    gl::UseProgram(arrow_program);
+        
+                    let model_loc = gl::GetUniformLocation(arrow_program, CString::new("model").unwrap().as_ptr());
+                    let view_loc = gl::GetUniformLocation(arrow_program, CString::new("view").unwrap().as_ptr());
+                    let proj_loc = gl::GetUniformLocation(arrow_program, CString::new("projection").unwrap().as_ptr());
+                    gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+                    gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
+                    gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
+        
+                    gl::BindVertexArray(arrow_vao);
+                    gl::DrawArrays(gl::LINES, 0, 6); // 3 lines → 6 vertices
+                }
+                windowed_context.swap_buffers().unwrap();
             }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                _ => {}
+            },
+            Event::MainEventsCleared => {
+                windowed_context.window().request_redraw();
+            }
+            _ => (),
         }
-
-        unsafe {
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-            gl::UseProgram(program);
-
-            let elapsed = start_time.elapsed().as_secs_f32();
-            let angle = Deg(elapsed * 45.0); // 45 degrees per second
-            let model = Matrix4::from_axis_angle(rotation_axis, angle);
-
-            let model_loc = gl::GetUniformLocation(program, CString::new("model").unwrap().as_ptr());
-            let view_loc = gl::GetUniformLocation(program, CString::new("view").unwrap().as_ptr());
-            let proj_loc = gl::GetUniformLocation(program, CString::new("projection").unwrap().as_ptr());
-            let light_pos_loc = gl::GetUniformLocation(program, CString::new("lightPos").unwrap().as_ptr());
-            let view_pos_loc = gl::GetUniformLocation(program, CString::new("viewPos").unwrap().as_ptr());
-            let light_color_loc = gl::GetUniformLocation(program, CString::new("lightColor").unwrap().as_ptr());
-            let object_color_loc = gl::GetUniformLocation(program, CString::new("objectColor").unwrap().as_ptr());
-
-            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
-            gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
-            gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
-            gl::Uniform3f(light_pos_loc, 1.2, 1.0, 2.0);
-            gl::Uniform3f(view_pos_loc, 0.0, 0.0, 2.0);
-            gl::Uniform3f(light_color_loc, 1.0, 1.0, 1.0);
-            gl::Uniform3f(object_color_loc, 0.3, 0.5, 1.0);
-
-            gl::BindVertexArray(vao);
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
-
-            gl::UseProgram(arrow_program);
-
-            let model_loc = gl::GetUniformLocation(arrow_program, CString::new("model").unwrap().as_ptr());
-            let view_loc = gl::GetUniformLocation(arrow_program, CString::new("view").unwrap().as_ptr());
-            let proj_loc = gl::GetUniformLocation(arrow_program, CString::new("projection").unwrap().as_ptr());
-            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
-            gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
-            gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
-
-            gl::BindVertexArray(arrow_vao);
-            gl::DrawArrays(gl::LINES, 0, 6); // 3 lines → 6 vertices
-        }
-
-        window.swap_buffers();
-    }
+    });
 }

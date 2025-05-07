@@ -83,20 +83,35 @@ fn main() {
          0.0,  0.5, 0.0,     0.0, 0.0, 1.0,
     ];
 
+    // Vao stores the state related to vertex attribute pointers (position, color. normals, etc.)
     let (mut vao, mut vbo) = (0, 0);
+
     unsafe {
+        // Generate a single vao id
         gl::GenVertexArrays(1, &mut vao);
+        // Generate a single vbo
         gl::GenBuffers(1, &mut vbo);
 
+        // Bind the vao to use/configure it
         gl::BindVertexArray(vao);
+
+        // Bind the vbo and set the buffer data (positions & normals) associated with it
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
+        // At this point we don't distinguish between positions and normals in the data
         gl::BufferData(gl::ARRAY_BUFFER, 
             (vertices.len() * mem::size_of::<f32>()) as isize,
             vertices.as_ptr() as *const _, 
             gl::STATIC_DRAW);
 
+        // Explain how to distinguish positions from normals in the data.  Note the attribute location
+        // number (index) is referenced from the shader
+
+        // Attribute location 0: position
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 6 * mem::size_of::<f32>() as i32, ptr::null());
         gl::EnableVertexAttribArray(0);
+
+        // Attribute location 1: normals
         gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, 6 * mem::size_of::<f32>() as i32, (3 * mem::size_of::<f32>()) as *const _);
         gl::EnableVertexAttribArray(1);
     }
@@ -152,20 +167,25 @@ fn main() {
         }
     "#;
 
+    // Compile and link the shader programs
     let vs = compile_shader(vs_src, gl::VERTEX_SHADER).unwrap();
     let fs = compile_shader(fs_src, gl::FRAGMENT_SHADER).unwrap();
     let program = link_program(vs, fs).unwrap();
 
-    // Camera and matrices
-    //let model = Matrix4::<f32>::identity();
+    // View matrix
     let view = Matrix4::look_at_rh(
         Point3::new(0.0, 0.0, 2.0),
         Point3::new(0.0, 0.0, 0.0),
         Vector3::unit_y(),
     );
+
+    // Projection matrix
     let projection = perspective(Deg(45.0), 800.0 / 600.0, 0.1, 100.0);
 
+    // Capture current time
     let start_time = Instant::now();
+
+    // Choose a random axis of rotation
     let mut rng = rand::thread_rng();
     let rotation_axis = Vector3::new(
         rng.gen_range(-1.0..1.0),
@@ -173,8 +193,8 @@ fn main() {
         rng.gen_range(-1.0..1.0),
     ).normalize();
 
-    let normal_scale = 0.2; // length of arrows
-
+    // Define surface normals at each of the corners of the triangle
+    let normal_scale = 0.1; // length of arrows
     let normal_lines: [f32; 18] = [
         // start point          // end point
         -0.5, -0.5, 0.0,        -0.5, -0.5, normal_scale,
@@ -182,13 +202,23 @@ fn main() {
          0.0,  0.5, 0.0,         0.0,  0.5, normal_scale,
     ];
 
+    // Vao stores the state related to vertex attribute pointers (position, color. normals, etc.)
     let (mut arrow_vao, mut arrow_vbo) = (0, 0);
+
     unsafe {
+        // Generate a single vao id
         gl::GenVertexArrays(1, &mut arrow_vao);
+
+        // Generate a single vbo
         gl::GenBuffers(1, &mut arrow_vbo);
     
+        // Bind the vao to use/configure it
         gl::BindVertexArray(arrow_vao);
+
+        // Bind the vbo and set the buffer data (positions & normals) associated with it
         gl::BindBuffer(gl::ARRAY_BUFFER, arrow_vbo);
+
+        // At this point we don't distinguish between positions and normals in the data
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (normal_lines.len() * mem::size_of::<f32>()) as isize,
@@ -196,6 +226,10 @@ fn main() {
             gl::STATIC_DRAW,
         );
     
+        // Explain how to distinguish positions from normals in the data.  Note the attribute location
+        // number (index) is referenced from the shader
+
+        // Attribute location 0: start point & end point
         gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<f32>() as i32, ptr::null());
         gl::EnableVertexAttribArray(0);
     }
@@ -221,24 +255,32 @@ fn main() {
         }
     "#;
 
+    // Compile and link the shader programs
     let arrow_vs_id = compile_shader(arrow_vs, gl::VERTEX_SHADER).unwrap();
     let arrow_fs_id = compile_shader(arrow_fs, gl::FRAGMENT_SHADER).unwrap();
     let arrow_program = link_program(arrow_vs_id, arrow_fs_id).unwrap();
 
     // Run event loop
     event_loop.run(move |event, _, control_flow| {
+
         *control_flow = ControlFlow::Poll;
 
         match event {
             Event::RedrawRequested(_) => {
                 unsafe {
                     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+                    // Use the main object shader (vertex and fragment) program
                     gl::UseProgram(program);
-        
+
+                    // Calculate rotation angle based on time passage
                     let elapsed = start_time.elapsed().as_secs_f32();
                     let angle = Deg(elapsed * 45.0); // 45 degrees per second
+
+                    // Adjust the model matrix by rotating it around the randomly-chosen vector
                     let model = Matrix4::from_axis_angle(rotation_axis, angle);
-        
+
+                    // Gain access to the variables used in the shader program
                     let model_loc = gl::GetUniformLocation(program, CString::new("model").unwrap().as_ptr());
                     let view_loc = gl::GetUniformLocation(program, CString::new("view").unwrap().as_ptr());
                     let proj_loc = gl::GetUniformLocation(program, CString::new("projection").unwrap().as_ptr());
@@ -246,7 +288,8 @@ fn main() {
                     let view_pos_loc = gl::GetUniformLocation(program, CString::new("viewPos").unwrap().as_ptr());
                     let light_color_loc = gl::GetUniformLocation(program, CString::new("lightColor").unwrap().as_ptr());
                     let object_color_loc = gl::GetUniformLocation(program, CString::new("objectColor").unwrap().as_ptr());
-        
+
+                    // Assign shader variable data
                     gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
                     gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
                     gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
@@ -254,22 +297,34 @@ fn main() {
                     gl::Uniform3f(view_pos_loc, 0.0, 0.0, 2.0);
                     gl::Uniform3f(light_color_loc, 1.0, 1.0, 1.0);
                     gl::Uniform3f(object_color_loc, 0.3, 0.5, 1.0);
-        
+
+                    // Select the triangle vao into context
                     gl::BindVertexArray(vao);
+
+                    // Draw the triangle
                     gl::DrawArrays(gl::TRIANGLES, 0, 3);
         
+                    // Use the normal vector shader (vertex and fragment) program
                     gl::UseProgram(arrow_program);
         
+                    // Gain access to the variables used in the shader program
                     let model_loc = gl::GetUniformLocation(arrow_program, CString::new("model").unwrap().as_ptr());
                     let view_loc = gl::GetUniformLocation(arrow_program, CString::new("view").unwrap().as_ptr());
                     let proj_loc = gl::GetUniformLocation(arrow_program, CString::new("projection").unwrap().as_ptr());
+
+                    // Assign shader variable data
                     gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
                     gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.as_ptr());
                     gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
         
+                    // Select the normal vectors vao into context
                     gl::BindVertexArray(arrow_vao);
+
+                    // Draw the normal vectors as lines
                     gl::DrawArrays(gl::LINES, 0, 6); // 3 lines → 6 vertices
                 }
+
+                // Swap the backbuffer to display
                 windowed_context.swap_buffers().unwrap();
             }
             Event::WindowEvent { event, .. } => match event {
